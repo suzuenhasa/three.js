@@ -1,5 +1,5 @@
-import { NearestFilter } from 'three/webgpu';
-import { Fn, Loop, float, vec2, vec3, vec4, abs, cross, dot, fract, mix, normalize, max, step, tan, radians, uniform, reference, renderGroup, texture, cubeTexture, screenCoordinate, interleavedGradientNoise, vogelDiskSample, orthographicDepthToViewZ, perspectiveDepthToViewZ, logarithmicDepthToViewZ, viewZToPerspectiveDepth, viewZToReversedPerspectiveDepth, viewZToLogarithmicDepth } from 'three/tsl';
+import { NearestFilter, VSMShadowMap, warnOnce } from 'three/webgpu';
+import { Fn, Loop, float, vec2, vec3, vec4, abs, cross, dot, fract, mix, normalize, max, step, tan, radians, uniform, reference, renderGroup, texture, cubeTexture, screenCoordinate, interleavedGradientNoise, vogelDiskSample, orthographicDepthToViewZ, perspectiveDepthToViewZ, logarithmicDepthToViewZ, viewZToPerspectiveDepth, viewZToReversedPerspectiveDepth, viewZToLogarithmicDepth, VSMShadowFilter } from 'three/tsl';
 
 /**
  * Creates a shadow filter that implements Percentage-Closer Soft Shadows (PCSS).
@@ -8,7 +8,7 @@ import { Fn, Loop, float, vec2, vec3, vec4, abs, cross, dot, fract, mix, normali
  * a certain size. Assign the result to `light.shadow.filterNode`.
  *
  * The filter works in three steps:
- * 1. Blocker search: the depths of the occluders around the receiver are averaged.
+ * 1. Blocker search: the distances of the occluders around the receiver to the light are averaged.
  * 2. Penumbra estimation: the size of the penumbra follows from the light size and
  * the distances of the receiver and the occluders to the light.
  * 3. Filtering: percentage-closer filtering with a kernel scaled to the penumbra size.
@@ -26,19 +26,23 @@ import { Fn, Loop, float, vec2, vec3, vec4, abs, cross, dot, fract, mix, normali
  * filter.lightSize.value = 0.4; // can be changed at runtime
  * ```
  *
- * By default, the blocker search looks for occluders anywhere between the receiver and the
- * near plane of the shadow camera. When the shadow camera is far away from the scene, like
- * with cascaded shadow maps where each cascade places its own shadow camera, `maxOccluderDistance`
- * limits the search to occluders up to that distance from the receiver (in world units). This
- * reduces noise and keeps penumbrae consistent between cascades. Use at least the largest
- * distance between an occluder and the surfaces it shadows, since the penumbrae of occluders
- * farther away are cut off.
+ * By default, the size of the area searched for occluders assumes they can be anywhere between
+ * the receiver and the near plane of the shadow camera. When the shadow camera is far away from
+ * the scene, like with cascaded shadow maps where each cascade places its own shadow camera, set
+ * `maxOccluderDistance` to the largest distance between an occluder and the surfaces it shadows
+ * (in world units). The search area is then sized for occluders up to that distance, which reduces
+ * noise and keeps penumbrae consistent between cascades. Occluders found in the search area still
+ * count, whatever their distance, but the penumbrae of occluders farther away can be cut off.
+ *
+ * With `CSMShadowNode`, assign the filter before the first render, since the cascades copy it from
+ * the light when they are created. The filter needs the raw depth values of the shadow map, so
+ * `VSMShadowMap` is not supported. In that case, a warning is logged and VSM filtering is used.
  *
  * @tsl
  * @function
  * @param {Object} [parameters] - The configuration parameters.
  * @param {number|Node<float>} [parameters.lightSize=0.1] - The size of the light.
- * @param {?(number|Node<float>)} [parameters.maxOccluderDistance=null] - The maximum distance between a receiver and its occluders in world units. `null` means no limit.
+ * @param {?(number|Node<float>)} [parameters.maxOccluderDistance=null] - The largest distance between a receiver and its occluders, in world units, that the size of the blocker search accounts for. `null` means up to the near plane of the shadow camera.
  * @param {number} [parameters.blockerSearchSamples=32] - The number of samples of the blocker search.
  * @param {number} [parameters.filterSamples=32] - The number of samples of the filtering.
  * @return {Function} The shadow filter. Its `lightSize` and `maxOccluderDistance` properties hold the respective nodes.
@@ -49,6 +53,18 @@ export const PCSSShadowFilter = ( { lightSize = 0.1, maxOccluderDistance = null,
 	const maxOccluderDistanceNode = ( maxOccluderDistance === null || maxOccluderDistance.isNode === true ) ? maxOccluderDistance : uniform( maxOccluderDistance );
 
 	const filter = Fn( ( inputs, builder ) => {
+
+		// with VSM, the filter receives blurred depth moments instead of the depth texture
+
+		if ( builder.renderer.shadowMap.type === VSMShadowMap && inputs.shadow.isPointLightShadow !== true ) {
+
+			warnOnce( 'PCSSShadowFilter: VSMShadowMap is not supported. Using VSM filtering instead.' );
+
+			const { depthTexture, shadowCoord, depthLayer } = inputs;
+
+			return VSMShadowFilter( { depthTexture, shadowCoord, depthLayer } );
+
+		}
 
 		// PCSS reads raw depth values, so the shadow map must not use a comparison sampler
 		// or linear filtering (an unfilterable depth texture is incomplete in WebGL 2)
@@ -164,11 +180,15 @@ function planarFilter( { depthTexture, shadowCoord, shadow, depthLayer }, { ligh
 
 	const getLit = ( depths ) => reversedDepthBuffer ? step( depths, vec4( receiverDepth ) ) : step( vec4( receiverDepth ), depths );
 
+	// perspective and logarithmic depths are not linear, so they are converted to distances before averaging
+
+	const toDistances = ( depths ) => vec4( toDistance( depths.x ), toDistance( depths.y ), toDistance( depths.z ), toDistance( depths.w ) );
+
 	const phi = getSamplingAngle();
 
 	// 1. blocker search
 
-	const blockerDepthSum = float( 0 ).toVar();
+	const blockerDistanceSum = float( 0 ).toVar();
 	const blockerCount = float( 0 ).toVar();
 
 	Loop( blockerSearchSamples, ( { i } ) => {
@@ -176,7 +196,7 @@ function planarFilter( { depthTexture, shadowCoord, shadow, depthLayer }, { ligh
 		const depths = gatherDepths( shadowCoord.xy.add( vogelDiskSample( i, blockerSearchSamples, phi ).mul( searchRadius ) ) );
 		const blockers = vec4( 1 ).sub( getLit( depths ) ).toConst();
 
-		blockerDepthSum.addAssign( dot( blockers, depths ) );
+		blockerDistanceSum.addAssign( dot( blockers, toDistances( depths ) ) );
 		blockerCount.addAssign( dot( blockers, vec4( 1 ) ) );
 
 	} );
@@ -185,7 +205,7 @@ function planarFilter( { depthTexture, shadowCoord, shadow, depthLayer }, { ligh
 
 	// if the search found no blockers, a sparse search may have missed them, so fall back to a hard shadow test
 
-	const blockerDistance = blockerCount.greaterThan( 0 ).select( toDistance( blockerDepthSum.div( blockerCount.max( 1 ) ) ), receiverDistance );
+	const blockerDistance = blockerCount.greaterThan( 0 ).select( blockerDistanceSum.div( blockerCount.max( 1 ) ), receiverDistance );
 	const filterRadius = getFilterRadius( blockerDistance ).max( vec2( 1 ).div( mapSize ) ).toConst();
 
 	// 3. filtering
