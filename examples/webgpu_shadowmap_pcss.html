@@ -49,7 +49,7 @@
 			const POINT_LIGHT_POSITION = new THREE.Vector3( 3, 8, 2 );
 
 			let camera, scene, renderer, timer;
-			let group, lights;
+			let group, lights, shadowCameraHelper;
 
 			const params = {
 				light: 'directional',
@@ -83,6 +83,9 @@
 				directionalLight.shadow.normalBias = 0.02;
 				directionalLight.shadow.filterNode = PCSSShadowFilter( { lightSize: params.directionalSize } );
 				scene.add( directionalLight );
+
+				shadowCameraHelper = new THREE.CameraHelper( directionalLight.shadow.camera );
+				scene.add( shadowCameraHelper );
 
 				const spotLight = new THREE.SpotLight( 0xf0f6ff, 400 );
 				spotLight.position.set( 2, 8, 4 );
@@ -212,6 +215,8 @@
 					lights[ type ].visible = ( type === params.light );
 
 				}
+
+				shadowCameraHelper.visible = ( params.light === 'directional' );
 
 			}
 
