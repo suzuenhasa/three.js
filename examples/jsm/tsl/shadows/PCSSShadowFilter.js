@@ -59,11 +59,11 @@ export const PCSSShadowFilter = ( { lightSize = 0.1, maxOccluderDistance = null,
 		depthTexture.minFilter = NearestFilter;
 		depthTexture.magFilter = NearestFilter;
 
-		// point lights pass the direction from the light to the fragment instead of shadow coordinates
+		// point light shadows are cube maps, sampled by the direction from the light to the fragment
 
 		const params = { lightSize: lightSizeNode, maxOccluderDistance: maxOccluderDistanceNode, blockerSearchSamples, filterSamples };
 
-		return ( inputs.bd3D !== undefined ) ? pointFilter( inputs, params, builder ) : planarFilter( inputs, params, builder );
+		return ( inputs.shadow.isPointLightShadow === true ) ? pointFilter( inputs, params, builder ) : planarFilter( inputs, params, builder );
 
 	} );
 
