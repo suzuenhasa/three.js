@@ -197,7 +197,9 @@ function planarFilter( { depthTexture, shadowCoord, shadow, depthLayer }, { ligh
 		const depths = gatherDepths( shadowCoord.xy.add( vogelDiskSample( i, blockerSearchSamples, phi ).mul( searchRadius ) ) );
 		const blockers = vec4( 1 ).sub( getLit( depths ) ).toConst();
 
-		blockerDistanceSum.addAssign( dot( blockers, toDistances( depths ) ) );
+		// only blocker depths are decoded; others are replaced by the receiver depth, which always decodes to a finite distance
+
+		blockerDistanceSum.addAssign( dot( blockers, toDistances( mix( vec4( receiverDepth ), depths, blockers ) ) ) );
 		blockerCount.addAssign( dot( blockers, vec4( 1 ) ) );
 
 	} );
