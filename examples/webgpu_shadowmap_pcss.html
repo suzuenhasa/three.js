@@ -39,6 +39,8 @@
 
 			import * as THREE from 'three/webgpu';
 
+			import { uniform, renderGroup } from 'three/tsl';
+
 			import { PCSSShadowFilter } from 'three/addons/tsl/shadows/PCSSShadowFilter.js';
 
 			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -73,6 +75,10 @@
 
 				// lights
 
+				const directionalSize = uniform( params.directionalSize ).setGroup( renderGroup );
+				const spotSize = uniform( params.spotSize ).setGroup( renderGroup );
+				const pointSize = uniform( params.pointSize ).setGroup( renderGroup );
+
 				scene.add( new THREE.AmbientLight( 0xaaaaaa, 3 ) );
 
 				const directionalLight = new THREE.DirectionalLight( 0xf0f6ff, 4.5 );
@@ -81,7 +87,7 @@
 				directionalLight.shadow.mapSize.set( 1024, 1024 );
 				directionalLight.shadow.camera.far = 20;
 				directionalLight.shadow.normalBias = 0.02;
-				directionalLight.shadow.filterNode = PCSSShadowFilter( { lightSize: params.directionalSize } );
+				directionalLight.shadow.filterNode = PCSSShadowFilter( { lightSize: directionalSize } );
 				scene.add( directionalLight );
 
 				shadowCameraHelper = new THREE.CameraHelper( directionalLight.shadow.camera );
@@ -96,7 +102,7 @@
 				spotLight.shadow.camera.near = 1;
 				spotLight.shadow.camera.far = 20;
 				spotLight.shadow.normalBias = 0.02;
-				spotLight.shadow.filterNode = PCSSShadowFilter( { lightSize: params.spotSize } );
+				spotLight.shadow.filterNode = PCSSShadowFilter( { lightSize: spotSize } );
 				scene.add( spotLight );
 
 				const pointLight = new THREE.PointLight( 0xffb070, POINT_LIGHT_INTENSITY );
@@ -106,7 +112,7 @@
 				pointLight.shadow.camera.near = 1;
 				pointLight.shadow.camera.far = 30;
 				pointLight.shadow.normalBias = 0.02;
-				pointLight.shadow.filterNode = PCSSShadowFilter( { lightSize: params.pointSize } );
+				pointLight.shadow.filterNode = PCSSShadowFilter( { lightSize: pointSize } );
 				scene.add( pointLight );
 
 				lights = { directional: directionalLight, spot: spotLight, point: pointLight };
@@ -180,19 +186,19 @@
 
 				gui.add( params, 'directionalSize', 0, 0.2 ).name( 'directional size' ).onChange( function ( value ) {
 
-					directionalLight.shadow.filterNode.lightSize.value = value;
+					directionalSize.value = value;
 
 				} );
 
 				gui.add( params, 'spotSize', 0, 1 ).name( 'spot size' ).onChange( function ( value ) {
 
-					spotLight.shadow.filterNode.lightSize.value = value;
+					spotSize.value = value;
 
 				} );
 
 				gui.add( params, 'pointSize', 0, 1 ).name( 'point size' ).onChange( function ( value ) {
 
-					pointLight.shadow.filterNode.lightSize.value = value;
+					pointSize.value = value;
 
 				} );
 

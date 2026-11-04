@@ -1,5 +1,5 @@
 import { NearestFilter, VSMShadowMap, warnOnce } from 'three/webgpu';
-import { Fn, Loop, float, vec2, vec3, vec4, abs, cross, dot, fract, mix, normalize, max, step, tan, radians, uniform, reference, renderGroup, texture, cubeTexture, screenCoordinate, interleavedGradientNoise, vogelDiskSample, orthographicDepthToViewZ, perspectiveDepthToViewZ, logarithmicDepthToViewZ, viewZToPerspectiveDepth, viewZToReversedPerspectiveDepth, viewZToLogarithmicDepth, VSMShadowFilter } from 'three/tsl';
+import { Fn, Loop, float, vec2, vec3, vec4, abs, cross, dot, fract, mix, normalize, max, step, tan, radians, reference, renderGroup, texture, cubeTexture, screenCoordinate, interleavedGradientNoise, vogelDiskSample, orthographicDepthToViewZ, perspectiveDepthToViewZ, logarithmicDepthToViewZ, viewZToPerspectiveDepth, viewZToReversedPerspectiveDepth, viewZToLogarithmicDepth, VSMShadowFilter } from 'three/tsl';
 
 /**
  * Creates a shadow filter that implements Percentage-Closer Soft Shadows (PCSS).
@@ -19,11 +19,11 @@ import { Fn, Loop, float, vec2, vec3, vec4, abs, cross, dot, fract, mix, normali
  * - Spot and point lights: The radius of the light in world units.
  *
  * ```js
- * const filter = PCSSShadowFilter( { lightSize: 0.2 } );
+ * const lightSize = uniform( 0.2 ).setGroup( renderGroup );
  *
- * light.shadow.filterNode = filter;
+ * light.shadow.filterNode = PCSSShadowFilter( { lightSize } );
  *
- * filter.lightSize.value = 0.4; // can be changed at runtime
+ * lightSize.value = 0.4; // can be changed at runtime
  * ```
  *
  * By default, the size of the area searched for occluders assumes they can be anywhere between
@@ -47,18 +47,18 @@ import { Fn, Loop, float, vec2, vec3, vec4, abs, cross, dot, fract, mix, normali
  * @tsl
  * @function
  * @param {Object} [parameters] - The configuration parameters.
- * @param {number|Node<float>} [parameters.lightSize=0.1] - The size of the light.
+ * @param {number|Node<float>} [parameters.lightSize=0.1] - The size of the light. To change it at runtime, use a uniform in the render group like the shadow's own uniforms.
  * @param {?(number|Node<float>)} [parameters.maxOccluderDistance=null] - The largest distance between a receiver and its occluders, in world units, that the size of the blocker search accounts for. `null` means up to the near plane of the shadow camera.
  * @param {number} [parameters.blockerSearchSamples=32] - The number of samples of the blocker search.
  * @param {number} [parameters.filterSamples=64] - The number of samples of the filtering.
- * @return {Function} The shadow filter. Its `lightSize` and `maxOccluderDistance` properties hold the respective nodes.
+ * @return {Function} The shadow filter.
  */
 export const PCSSShadowFilter = ( { lightSize = 0.1, maxOccluderDistance = null, blockerSearchSamples = 32, filterSamples = 64 } = {} ) => {
 
-	const lightSizeNode = ( lightSize.isNode === true ) ? lightSize : uniform( lightSize );
-	const maxOccluderDistanceNode = ( maxOccluderDistance === null || maxOccluderDistance.isNode === true ) ? maxOccluderDistance : uniform( maxOccluderDistance );
+	const lightSizeNode = float( lightSize );
+	const maxOccluderDistanceNode = ( maxOccluderDistance === null ) ? null : float( maxOccluderDistance );
 
-	const filter = Fn( ( inputs, builder ) => {
+	return Fn( ( inputs, builder ) => {
 
 		// with VSM, the filter receives blurred depth moments instead of the depth texture
 
@@ -88,11 +88,6 @@ export const PCSSShadowFilter = ( { lightSize = 0.1, maxOccluderDistance = null,
 		return ( inputs.shadow.isPointLightShadow === true ) ? pointFilter( inputs, params, builder ) : planarFilter( inputs, params, builder );
 
 	} );
-
-	filter.lightSize = lightSizeNode;
-	filter.maxOccluderDistance = maxOccluderDistanceNode;
-
-	return filter;
 
 };
 
