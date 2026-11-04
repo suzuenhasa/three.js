@@ -38,16 +38,22 @@ import { Fn, Loop, float, vec2, vec3, vec4, abs, cross, dot, fract, mix, normali
  * the light when they are created. The filter needs the raw depth values of the shadow map, so
  * `VSMShadowMap` is not supported. In that case, a warning is logged and VSM filtering is used.
  *
+ * The cost of the filter grows with `blockerSearchSamples`, `filterSamples` and the number of pixels
+ * receiving shadows. For directional and spot lights, each sample gathers four texels of the shadow
+ * map. The sampling pattern is rotated per pixel, which turns banding into fine noise; `filterSamples`
+ * has the largest effect on that noise. With many shadow casting lights or on mobile devices, lower
+ * sample counts like `16` reduce the cost.
+ *
  * @tsl
  * @function
  * @param {Object} [parameters] - The configuration parameters.
  * @param {number|Node<float>} [parameters.lightSize=0.1] - The size of the light.
  * @param {?(number|Node<float>)} [parameters.maxOccluderDistance=null] - The largest distance between a receiver and its occluders, in world units, that the size of the blocker search accounts for. `null` means up to the near plane of the shadow camera.
  * @param {number} [parameters.blockerSearchSamples=32] - The number of samples of the blocker search.
- * @param {number} [parameters.filterSamples=32] - The number of samples of the filtering.
+ * @param {number} [parameters.filterSamples=64] - The number of samples of the filtering.
  * @return {Function} The shadow filter. Its `lightSize` and `maxOccluderDistance` properties hold the respective nodes.
  */
-export const PCSSShadowFilter = ( { lightSize = 0.1, maxOccluderDistance = null, blockerSearchSamples = 32, filterSamples = 32 } = {} ) => {
+export const PCSSShadowFilter = ( { lightSize = 0.1, maxOccluderDistance = null, blockerSearchSamples = 32, filterSamples = 64 } = {} ) => {
 
 	const lightSizeNode = ( lightSize.isNode === true ) ? lightSize : uniform( lightSize );
 	const maxOccluderDistanceNode = ( maxOccluderDistance === null || maxOccluderDistance.isNode === true ) ? maxOccluderDistance : uniform( maxOccluderDistance );
